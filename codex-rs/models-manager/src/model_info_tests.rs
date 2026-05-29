@@ -3,6 +3,27 @@ use crate::ModelsManagerConfig;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn deepseek_models_have_explicit_metadata() {
+    let model = model_info_from_slug("deepseek-v4-pro");
+
+    assert_eq!(model.slug, "deepseek-v4-pro");
+    assert_eq!(model.used_fallback_model_metadata, false);
+    assert_eq!(model.context_window, Some(DEEPSEEK_CONTEXT_WINDOW_TOKENS));
+    assert_eq!(
+        model.max_context_window,
+        Some(DEEPSEEK_CONTEXT_WINDOW_TOKENS)
+    );
+    assert_eq!(model.supports_parallel_tool_calls, true);
+    assert_eq!(model.input_modalities, vec![InputModality::Text]);
+    assert!(
+        model
+            .description
+            .as_deref()
+            .is_some_and(|description| description.contains("384K max output"))
+    );
+}
+
+#[test]
 fn reasoning_summaries_override_true_enables_support() {
     let model = model_info_from_slug("unknown-model");
     let config = ModelsManagerConfig {

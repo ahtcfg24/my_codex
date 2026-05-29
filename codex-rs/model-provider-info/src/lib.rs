@@ -35,6 +35,10 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+const DEEPSEEK_PROVIDER_NAME: &str = "DeepSeek";
+pub const DEEPSEEK_PROVIDER_ID: &str = "deepseek";
+const DEEPSEEK_DEFAULT_BASE_URL: &str = "https://api.deepseek.com/v1";
+const DEEPSEEK_ENV_KEY: &str = "DEEPSEEK_API_KEY";
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
 pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
 pub const AMAZON_BEDROCK_GPT_5_5_MODEL_ID: &str = "openai.gpt-5.5";
@@ -49,17 +53,23 @@ pub const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer
 
 /// Wire protocol that the provider speaks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// OpenAI-compatible Chat Completions exposed at `/v1/chat/completions`.
+    ChatCompletions,
+    /// Anthropic Messages API at `/v1/messages`.
+    Anthropic,
 }
 
 impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Responses => "responses",
+            Self::ChatCompletions => "chat_completions",
+            Self::Anthropic => "anthropic",
         };
         f.write_str(value)
     }
@@ -74,7 +84,12 @@ impl<'de> Deserialize<'de> for WireApi {
         match value.as_str() {
             "responses" => Ok(Self::Responses),
             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            "chat_completions" | "chat-completions" => Ok(Self::ChatCompletions),
+            "anthropic" => Ok(Self::Anthropic),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "chat_completions", "anthropic"],
+            )),
         }
     }
 }
@@ -97,13 +112,16 @@ pub struct ModelProviderInfo {
     /// Value to use with `Authorization: Bearer <token>` header. Use of this
     /// config is discouraged in favor of `env_key` for security reasons, but
     /// this may be necessary when using this programmatically.
+    /// Also accepts `api_key` as an alias in config.toml for convenience.
+    #[serde(alias = "api_key")]
     pub experimental_bearer_token: Option<String>,
     /// Command-backed bearer-token configuration for this provider.
     pub auth: Option<ModelProviderAuthInfo>,
     /// AWS SigV4 auth configuration for this provider.
     pub aws: Option<ModelProviderAwsAuthInfo>,
     /// Which wire protocol this provider expects.
-    #[serde(default)]
+    /// Also accepts `api_mode` as an alias in config.toml for convenience.
+    #[serde(default, alias = "api_mode")]
     pub wire_api: WireApi,
     /// Optional query parameters to append to the base URL.
     pub query_params: Option<HashMap<String, String>>,
@@ -264,6 +282,11 @@ impl ModelProviderInfo {
             headers,
             retry,
             stream_idle_timeout: self.stream_idle_timeout(),
+            wire_api: match self.wire_api {
+                WireApi::Responses => codex_api::WireApiKind::Responses,
+                WireApi::ChatCompletions => codex_api::WireApiKind::ChatCompletions,
+                WireApi::Anthropic => codex_api::WireApiKind::Anthropic,
+            },
         })
     }
 
@@ -383,6 +406,37 @@ impl ModelProviderInfo {
         }
     }
 
+    pub fn create_deepseek_provider() -> ModelProviderInfo {
+        let hermes = hermes_deepseek_config();
+        let base_url = hermes
+            .as_ref()
+            .and_then(|config| config.base_url.clone())
+            .unwrap_or_else(|| DEEPSEEK_DEFAULT_BASE_URL.to_string());
+        let api_key = hermes.and_then(|config| config.api_key);
+        ModelProviderInfo {
+            name: DEEPSEEK_PROVIDER_NAME.into(),
+            base_url: Some(normalize_deepseek_base_url(&base_url)),
+            env_key: api_key.is_none().then(|| DEEPSEEK_ENV_KEY.to_string()),
+            env_key_instructions: Some(
+                "Set DEEPSEEK_API_KEY or configure providers.deepseek.api_key in ~/.hermes/config.yaml"
+                    .to_string(),
+            ),
+            experimental_bearer_token: api_key,
+            auth: None,
+            aws: None,
+            wire_api: WireApi::ChatCompletions,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            websocket_connect_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        }
+    }
+
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
     }
@@ -413,14 +467,15 @@ pub fn built_in_model_providers(
     use ModelProviderInfo as P;
     let openai_provider = P::create_openai_provider(openai_base_url);
     let amazon_bedrock_provider = P::create_amazon_bedrock_provider(/*aws*/ None);
+    let deepseek_provider = P::create_deepseek_provider();
 
-    // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI and
-    // open source ("oss") providers by default. Users are encouraged to add to
-    // `model_providers` in config.toml to add their own providers.
+    // Keep the first-party, DeepSeek, and open source ("oss") providers
+    // available by default. Users can add more providers under `model_providers`
+    // in config.toml.
     [
         (OPENAI_PROVIDER_ID, openai_provider),
         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
+        (DEEPSEEK_PROVIDER_ID, deepseek_provider),
         (
             OLLAMA_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
@@ -471,6 +526,71 @@ pub fn merge_configured_model_providers(
     }
 
     Ok(model_providers)
+}
+
+fn normalize_deepseek_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed == "https://api.deepseek.com" {
+        DEEPSEEK_DEFAULT_BASE_URL.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[derive(Default)]
+struct HermesDeepSeekConfig {
+    base_url: Option<String>,
+    api_key: Option<String>,
+}
+
+fn hermes_deepseek_config() -> Option<HermesDeepSeekConfig> {
+    let home = std::env::var("HOME").ok()?;
+    let path = std::path::Path::new(&home)
+        .join(".hermes")
+        .join("config.yaml");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let mut in_providers = false;
+    let mut in_deepseek = false;
+    let mut config = HermesDeepSeekConfig::default();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len().saturating_sub(line.trim_start().len());
+        if indent == 0 {
+            in_providers = trimmed == "providers:";
+            in_deepseek = false;
+            continue;
+        }
+        if in_providers && indent == 2 && trimmed.ends_with(':') {
+            in_deepseek = trimmed.trim_end_matches(':') == "deepseek";
+            continue;
+        }
+        if !in_deepseek || indent < 4 {
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            let value = value.trim().trim_matches(|ch| ch == '\'' || ch == '"');
+            match key.trim() {
+                "base_url" | "url" | "api" if !value.is_empty() => {
+                    config.base_url = Some(value.to_string());
+                }
+                "api_key" if !value.is_empty() => {
+                    config.api_key = Some(value.to_string());
+                }
+                "key_env" if !value.is_empty() && config.api_key.is_none() => {
+                    config.api_key = std::env::var(value)
+                        .ok()
+                        .filter(|env_value| !env_value.trim().is_empty());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (config.base_url.is_some() || config.api_key.is_some()).then_some(config)
 }
 
 pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> ModelProviderInfo {

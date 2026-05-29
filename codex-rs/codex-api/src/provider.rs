@@ -8,6 +8,22 @@ use std::collections::HashMap;
 use std::time::Duration;
 use url::Url;
 
+/// Wire protocol variant known to the API layer.
+///
+/// This is intentionally kept separate from the `WireApi` enum in
+/// `codex-model-provider-info` to avoid a circular dependency. The
+/// conversion happens in `ModelProviderInfo::to_api_provider()`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WireApiKind {
+    /// OpenAI Responses API.
+    #[default]
+    Responses,
+    /// OpenAI-compatible Chat Completions API.
+    ChatCompletions,
+    /// Anthropic Messages API.
+    Anthropic,
+}
+
 /// High-level retry configuration for a provider.
 ///
 /// This is converted into a `RetryPolicy` used by `codex-client` to drive
@@ -47,6 +63,7 @@ pub struct Provider {
     pub headers: HeaderMap,
     pub retry: RetryConfig,
     pub stream_idle_timeout: Duration,
+    pub wire_api: WireApiKind,
 }
 
 impl Provider {

@@ -226,6 +226,7 @@ mod tests {
     use crate::endpoint::realtime_websocket::RealtimeOutputModality;
     use crate::endpoint::realtime_websocket::RealtimeSessionMode;
     use crate::provider::RetryConfig;
+    use crate::provider::WireApiKind;
     use async_trait::async_trait;
     use codex_client::Request;
     use codex_client::Response;
@@ -307,6 +308,7 @@ mod tests {
                 retry_transport: true,
             },
             stream_idle_timeout: Duration::from_secs(1),
+            wire_api: WireApiKind::Responses,
         }
     }
 

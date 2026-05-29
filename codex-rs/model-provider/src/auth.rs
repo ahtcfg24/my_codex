@@ -8,9 +8,11 @@ use codex_api::SharedAuthProvider;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use http::HeaderMap;
 use http::HeaderValue;
 
+use crate::bearer_auth_provider::AnthropicApiKeyProvider;
 use crate::bearer_auth_provider::BearerAuthProvider;
 
 #[derive(Clone, Debug)]
@@ -80,7 +82,7 @@ pub(crate) fn resolve_provider_auth(
     provider: &ModelProviderInfo,
 ) -> codex_protocol::error::Result<SharedAuthProvider> {
     if let Some(auth) = bearer_auth_for_provider(provider)? {
-        return Ok(Arc::new(auth));
+        return Ok(auth);
     }
 
     Ok(match auth {
@@ -89,15 +91,27 @@ pub(crate) fn resolve_provider_auth(
     })
 }
 
+/// Creates the appropriate auth provider based on the provider's wire API.
+/// For Anthropic wire API, uses `x-api-key` header; otherwise uses `Authorization: Bearer`.
 fn bearer_auth_for_provider(
     provider: &ModelProviderInfo,
-) -> codex_protocol::error::Result<Option<BearerAuthProvider>> {
+) -> codex_protocol::error::Result<Option<SharedAuthProvider>> {
+    let is_anthropic = provider.wire_api == WireApi::Anthropic;
+
     if let Some(api_key) = provider.api_key()? {
-        return Ok(Some(BearerAuthProvider::new(api_key)));
+        return Ok(Some(if is_anthropic {
+            Arc::new(AnthropicApiKeyProvider::new(api_key))
+        } else {
+            Arc::new(BearerAuthProvider::new(api_key))
+        }));
     }
 
     if let Some(token) = provider.experimental_bearer_token.clone() {
-        return Ok(Some(BearerAuthProvider::new(token)));
+        return Ok(Some(if is_anthropic {
+            Arc::new(AnthropicApiKeyProvider::new(token))
+        } else {
+            Arc::new(BearerAuthProvider::new(token))
+        }));
     }
 
     Ok(None)

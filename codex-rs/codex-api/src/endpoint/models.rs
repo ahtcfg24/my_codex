@@ -150,6 +150,7 @@ mod tests {
                 retry_transport: true,
             },
             stream_idle_timeout: Duration::from_secs(1),
+            wire_api: crate::provider::WireApiKind::default(),
         }
     }
 

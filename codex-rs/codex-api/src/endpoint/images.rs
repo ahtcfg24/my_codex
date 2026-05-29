@@ -80,6 +80,7 @@ mod tests {
     use crate::images::ImageQuality;
     use crate::images::ImageUrl;
     use crate::provider::RetryConfig;
+    use crate::provider::WireApiKind;
     use async_trait::async_trait;
     use codex_client::Request;
     use codex_client::RequestBody;
@@ -144,6 +145,7 @@ mod tests {
                 retry_transport: true,
             },
             stream_idle_timeout: Duration::from_secs(1),
+            wire_api: WireApiKind::Responses,
         }
     }
 

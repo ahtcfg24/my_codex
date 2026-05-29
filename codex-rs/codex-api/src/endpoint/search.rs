@@ -53,6 +53,7 @@ mod tests {
     use super::*;
     use crate::auth::AuthProvider;
     use crate::provider::RetryConfig;
+    use crate::provider::WireApiKind;
     use crate::search::AllowedCaller;
     use crate::search::ApproximateLocation;
     use crate::search::LocationType;
@@ -130,6 +131,7 @@ mod tests {
                 retry_transport: true,
             },
             stream_idle_timeout: Duration::from_secs(1),
+            wire_api: WireApiKind::Responses,
         }
     }
 

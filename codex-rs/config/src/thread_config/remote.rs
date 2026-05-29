@@ -283,6 +283,10 @@ fn proto_string_map(values: HashMap<String, String>) -> proto::StringMap {
 fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
     match wire_api {
         WireApi::Responses => proto::WireApi::Responses,
+        // The proto schema only models the Responses wire API. Chat Completions
+        // and Anthropic providers are not transported over this remote-config
+        // path, so this test-only encoder maps them onto Responses.
+        WireApi::ChatCompletions | WireApi::Anthropic => proto::WireApi::Responses,
     }
 }
 

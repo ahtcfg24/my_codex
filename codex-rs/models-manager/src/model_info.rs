@@ -1,5 +1,6 @@
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
+use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
@@ -19,6 +20,9 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
     "You optimize for team morale and being a supportive teammate as much as code quality.";
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
+const DEEPSEEK_CONTEXT_WINDOW_TOKENS: i64 = 1_000_000;
+// DeepSeek documents a 384K maximum output budget, but Codex ModelInfo currently
+// has no separate max-output field; keep it in the description below.
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
@@ -64,6 +68,9 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
 
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
+    if let Some(model) = deepseek_model_info(slug) {
+        return model;
+    }
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
     ModelInfo {
         slug: slug.to_string(),
@@ -101,6 +108,54 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         supports_search_tool: false,
         tool_mode: None,
     }
+}
+
+fn deepseek_model_info(slug: &str) -> Option<ModelInfo> {
+    if !matches!(
+        slug,
+        "deepseek-v4-pro" | "deepseek-v4-flash" | "deepseek-v4"
+    ) {
+        return None;
+    }
+    Some(ModelInfo {
+        slug: slug.to_string(),
+        display_name: slug.to_string(),
+        description: Some(match slug {
+            "deepseek-v4-pro" => "DeepSeek V4 Pro – flagship model; 1M context; 384K max output; thinking mode enabled by default; supports JSON Output, Tool Calls, Chat Prefix Completion (beta), and FIM in non-thinking mode.".to_string(),
+            "deepseek-v4-flash" => "DeepSeek V4 Flash – fast/cost-efficient model; 1M context; 384K max output; thinking mode enabled by default; supports JSON Output, Tool Calls, Chat Prefix Completion (beta), and FIM in non-thinking mode.".to_string(),
+            _ => "DeepSeek V4 model; 1M context; 384K max output.".to_string(),
+        }),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
+        shell_type: ConfigShellToolType::Default,
+        visibility: ModelVisibility::List,
+        supported_in_api: true,
+        priority: 99,
+        additional_speed_tiers: Vec::new(),
+        service_tiers: Vec::new(),
+        default_service_tier: None,
+        availability_nux: None,
+        upgrade: None,
+        base_instructions: BASE_INSTRUCTIONS.to_string(),
+        model_messages: None,
+        supports_reasoning_summaries: false,
+        default_reasoning_summary: ReasoningSummary::Auto,
+        support_verbosity: false,
+        default_verbosity: None,
+        apply_patch_tool_type: None,
+        web_search_tool_type: WebSearchToolType::Text,
+        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
+        supports_parallel_tool_calls: true,
+        supports_image_detail_original: false,
+        context_window: Some(DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+        max_context_window: Some(DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+        auto_compact_token_limit: None,
+        effective_context_window_percent: 95,
+        experimental_supported_tools: Vec::new(),
+        input_modalities: vec![InputModality::Text],
+        used_fallback_model_metadata: false,
+        supports_search_tool: false,
+    })
 }
 
 fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {

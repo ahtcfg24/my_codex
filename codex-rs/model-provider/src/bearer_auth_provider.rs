@@ -46,6 +46,32 @@ impl AuthProvider for BearerAuthProvider {
     }
 }
 
+/// Anthropic-style API key auth provider that uses `x-api-key` header
+/// instead of `Authorization: Bearer`. Used for providers with
+/// `wire_api = "anthropic"` (e.g., Anthropic, Mimo).
+#[derive(Clone, Default)]
+pub struct AnthropicApiKeyProvider {
+    pub token: Option<String>,
+}
+
+impl AnthropicApiKeyProvider {
+    pub fn new(token: String) -> Self {
+        Self {
+            token: Some(token),
+        }
+    }
+}
+
+impl AuthProvider for AnthropicApiKeyProvider {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+        if let Some(token) = self.token.as_ref()
+            && let Ok(header) = HeaderValue::from_str(token)
+        {
+            let _ = headers.insert("x-api-key", header);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
