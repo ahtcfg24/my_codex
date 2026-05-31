@@ -24,6 +24,28 @@ fn deepseek_models_have_explicit_metadata() {
 }
 
 #[test]
+fn mimo_models_have_explicit_metadata() {
+    let model = model_info_from_slug("mimo-v2.5-pro");
+
+    assert_eq!(model.slug, "mimo-v2.5-pro");
+    assert_eq!(model.used_fallback_model_metadata, false);
+    assert_eq!(model.context_window, Some(MIMO_PRO_CONTEXT_WINDOW_TOKENS));
+    assert_eq!(
+        model.max_context_window,
+        Some(MIMO_PRO_CONTEXT_WINDOW_TOKENS)
+    );
+    assert_eq!(model.supports_parallel_tool_calls, true);
+    assert_eq!(model.supports_search_tool, true);
+    assert_eq!(model.input_modalities, vec![InputModality::Text]);
+    assert!(
+        model
+            .description
+            .as_deref()
+            .is_some_and(|description| description.contains("128K max output"))
+    );
+}
+
+#[test]
 fn reasoning_summaries_override_true_enables_support() {
     let model = model_info_from_slug("unknown-model");
     let config = ModelsManagerConfig {

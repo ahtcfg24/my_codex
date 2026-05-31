@@ -465,14 +465,21 @@ pub(crate) fn construct_model_info_from_candidates(
     // retry for namespaced slugs like `custom/gpt-5.3-codex`.
     let remote = find_model_by_longest_prefix(model, candidates)
         .or_else(|| find_model_by_namespaced_suffix(model, candidates));
+    let local = model_info::model_info_from_slug(model);
     let model_info = if let Some(remote) = remote {
+        // Prefer local curated metadata for context_window over the remote value,
+        // since third-party APIs (e.g. MiMo, DeepSeek) may return inaccurate values.
+        let context_window = local.context_window.or(remote.context_window);
+        let max_context_window = local.max_context_window.or(remote.max_context_window);
         ModelInfo {
             slug: model.to_string(),
             used_fallback_model_metadata: false,
+            context_window,
+            max_context_window,
             ..remote
         }
     } else {
-        model_info::model_info_from_slug(model)
+        local
     };
     model_info::with_config_overrides(model_info, config)
 }

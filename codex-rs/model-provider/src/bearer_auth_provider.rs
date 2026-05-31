@@ -56,9 +56,7 @@ pub struct AnthropicApiKeyProvider {
 
 impl AnthropicApiKeyProvider {
     pub fn new(token: String) -> Self {
-        Self {
-            token: Some(token),
-        }
+        Self { token: Some(token) }
     }
 }
 

@@ -19,6 +19,7 @@ use codex_client::RequestCompression;
 use codex_client::RequestTelemetry;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::SessionSource;
 use http::HeaderMap;
 use http::HeaderName;
@@ -260,6 +261,7 @@ fn responses_body_to_chat_completions_body(body: Value) -> Result<Value, ApiErro
     messages.extend(response_items_to_chat_messages(&request.input));
 
     let tools = response_tools_to_chat_tools(&request.tools);
+    let reasoning_effort = reasoning_effort_for_request(&request);
     let mut chat_body = json!({
         "model": request.model,
         "messages": messages,
@@ -270,6 +272,9 @@ fn responses_body_to_chat_completions_body(body: Value) -> Result<Value, ApiErro
         chat_body["tools"] = Value::Array(tools);
         chat_body["tool_choice"] = Value::String(request.tool_choice);
         chat_body["parallel_tool_calls"] = Value::Bool(request.parallel_tool_calls);
+    }
+    if let Some(effort) = reasoning_effort {
+        chat_body["reasoning_effort"] = effort;
     }
     Ok(chat_body)
 }
@@ -435,6 +440,17 @@ fn responses_body_to_anthropic_body(body: Value) -> Result<Value, ApiError> {
             anthropic_body["tool_choice"] = json!({ "type": "any" });
         }
     }
+    if let Some(budget) = anthropic_thinking_budget(&request) {
+        anthropic_body["thinking"] = json!({
+            "type": "enabled",
+            "budget_tokens": budget,
+        });
+        // Anthropic requires max_tokens >= budget_tokens.
+        let min_max = budget + ANTHROPIC_THINKING_OUTPUT_BUFFER;
+        if min_max > ANTHROPIC_DEFAULT_MAX_TOKENS {
+            anthropic_body["max_tokens"] = Value::Number(min_max.into());
+        }
+    }
 
     Ok(anthropic_body)
 }
@@ -596,6 +612,36 @@ fn response_tools_to_chat_tools(tools: &[Value]) -> Vec<Value> {
         })
         .collect()
 }
+
+/// Extracts the `reasoning_effort` value from a Responses request when the
+/// effort is set and not `None`. Returns `None` when reasoning is absent or
+/// effort is explicitly `None`.
+fn reasoning_effort_for_request(request: &ResponsesApiRequest) -> Option<Value> {
+    let effort = request.reasoning.as_ref()?.effort.as_ref()?;
+    if *effort == ReasoningEffort::None {
+        return None;
+    }
+    serde_json::to_value(effort).ok()
+}
+
+/// Maps the reasoning effort from a Responses request to Anthropic's
+/// `thinking.budget_tokens`. Returns `None` when thinking should not be
+/// enabled (effort absent or explicitly `None`).
+fn anthropic_thinking_budget(request: &ResponsesApiRequest) -> Option<u32> {
+    let effort = request.reasoning.as_ref()?.effort.as_ref()?;
+    match effort {
+        ReasoningEffort::None => None,
+        ReasoningEffort::Minimal => Some(2048),
+        ReasoningEffort::Low => Some(4096),
+        ReasoningEffort::Medium => Some(10000),
+        ReasoningEffort::High => Some(32000),
+        ReasoningEffort::XHigh => Some(64000),
+    }
+}
+
+/// Extra output tokens reserved above the thinking budget so the model can
+/// still produce a response after reasoning.
+const ANTHROPIC_THINKING_OUTPUT_BUFFER: u32 = 4096;
 
 #[cfg(test)]
 mod tests {

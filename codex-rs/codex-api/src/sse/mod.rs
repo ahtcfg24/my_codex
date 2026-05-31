@@ -2,7 +2,6 @@ pub(crate) mod anthropic;
 pub(crate) mod chat_completions;
 pub(crate) mod responses;
 
-pub use anthropic::spawn_anthropic_stream;
 pub use chat_completions::spawn_chat_completions_stream;
 pub(crate) use responses::ResponsesStreamEvent;
 pub(crate) use responses::process_responses_event;

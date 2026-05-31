@@ -173,10 +173,7 @@ enum BlockState {
 /// The downstream consumer in `codex-core` requires every streamed delta to be
 /// bracketed by an `OutputItemAdded`/`OutputItemDone` pair so that an "active
 /// item" exists; this closes the item opened in `content_block_start`.
-async fn finish_block(
-    tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
-    state: BlockState,
-) {
+async fn finish_block(tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>, state: BlockState) {
     let item = match state {
         BlockState::Text(text) => ResponseItem::Message {
             id: None,
@@ -333,11 +330,10 @@ async fn process_anthropic_sse(
                             }
                         }
                         "input_json_delta" => {
-                            if let Some(json) = delta.partial_json {
-                                if let Some(BlockState::ToolUse(tc)) = blocks.get_mut(&index) {
+                            if let Some(json) = delta.partial_json
+                                && let Some(BlockState::ToolUse(tc)) = blocks.get_mut(&index) {
                                     tc.json_accumulator.push_str(&json);
                                 }
-                            }
                         }
                         _ => {}
                     }

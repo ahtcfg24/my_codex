@@ -24,6 +24,11 @@ const DEEPSEEK_CONTEXT_WINDOW_TOKENS: i64 = 1_000_000;
 // DeepSeek documents a 384K maximum output budget, but Codex ModelInfo currently
 // has no separate max-output field; keep it in the description below.
 
+// MiMo model context windows
+const MIMO_PRO_CONTEXT_WINDOW_TOKENS: i64 = 1_000_000;
+const MIMO_OMNI_CONTEXT_WINDOW_TOKENS: i64 = 1_000_000;
+const MIMO_FLASH_CONTEXT_WINDOW_TOKENS: i64 = 256_000;
+
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
         && supports_reasoning_summaries
@@ -68,6 +73,9 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
 
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
+    if let Some(model) = mimo_model_info(slug) {
+        return model;
+    }
     if let Some(model) = deepseek_model_info(slug) {
         return model;
     }
@@ -108,6 +116,74 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         supports_search_tool: false,
         tool_mode: None,
     }
+}
+
+fn mimo_model_info(slug: &str) -> Option<ModelInfo> {
+    if !matches!(
+        slug,
+        "mimo-v2.5-pro" | "mimo-v2-pro" | "mimo-v2.5" | "mimo-v2-omni" | "mimo-v2-flash"
+    ) {
+        return None;
+    }
+    let (context_window, description) = match slug {
+        "mimo-v2.5-pro" => (
+            MIMO_PRO_CONTEXT_WINDOW_TOKENS,
+            "Xiaomi MiMo V2.5 Pro – flagship model; 1M context; 128K max output; supports Deep Thinking, Function Call, Structured Output, and Web Search.",
+        ),
+        "mimo-v2-pro" => (
+            MIMO_PRO_CONTEXT_WINDOW_TOKENS,
+            "Xiaomi MiMo V2 Pro – flagship model; 1M context; 128K max output; supports Deep Thinking, Function Call, Structured Output, and Web Search.",
+        ),
+        "mimo-v2.5" => (
+            MIMO_OMNI_CONTEXT_WINDOW_TOKENS,
+            "Xiaomi MiMo V2.5 – omni-modal model; 1M context; 128K max output; supports Full-modal Understanding, Deep Thinking, Function Call, Structured Output, and Web Search.",
+        ),
+        "mimo-v2-omni" => (
+            MIMO_FLASH_CONTEXT_WINDOW_TOKENS,
+            "Xiaomi MiMo V2 Omni – omni-modal model; 256K context; 128K max output; supports Full-modal Understanding, Deep Thinking, Function Call, Structured Output, and Web Search.",
+        ),
+        "mimo-v2-flash" => (
+            MIMO_FLASH_CONTEXT_WINDOW_TOKENS,
+            "Xiaomi MiMo V2 Flash – fast/cost-efficient model; 256K context; 64K max output; supports Deep Thinking, Function Call, Structured Output, and Web Search.",
+        ),
+        _ => unreachable!(),
+    };
+    Some(ModelInfo {
+        slug: slug.to_string(),
+        display_name: slug.to_string(),
+        description: Some(description.to_string()),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
+        shell_type: ConfigShellToolType::Default,
+        visibility: ModelVisibility::List,
+        supported_in_api: true,
+        priority: 99,
+        additional_speed_tiers: Vec::new(),
+        service_tiers: Vec::new(),
+        default_service_tier: None,
+        availability_nux: None,
+        upgrade: None,
+        base_instructions: BASE_INSTRUCTIONS.to_string(),
+        model_messages: None,
+        supports_reasoning_summaries: false,
+        default_reasoning_summary: ReasoningSummary::Auto,
+        support_verbosity: false,
+        default_verbosity: None,
+        apply_patch_tool_type: None,
+        web_search_tool_type: WebSearchToolType::Text,
+        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
+        supports_parallel_tool_calls: true,
+        supports_image_detail_original: false,
+        context_window: Some(context_window),
+        max_context_window: Some(context_window),
+        auto_compact_token_limit: None,
+        effective_context_window_percent: 95,
+        experimental_supported_tools: Vec::new(),
+        input_modalities: vec![InputModality::Text],
+        used_fallback_model_metadata: false,
+        supports_search_tool: true,
+        tool_mode: None,
+    })
 }
 
 fn deepseek_model_info(slug: &str) -> Option<ModelInfo> {
@@ -155,6 +231,7 @@ fn deepseek_model_info(slug: &str) -> Option<ModelInfo> {
         input_modalities: vec![InputModality::Text],
         used_fallback_model_metadata: false,
         supports_search_tool: false,
+        tool_mode: None,
     })
 }
 
